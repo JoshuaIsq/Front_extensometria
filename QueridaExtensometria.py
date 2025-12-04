@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import dearpygui.dearpygui as dpg
 import scipy as sp
+from scipy import signal
 
 #1 ---------------- Carregar dados do arquivo ------------------ #
 def load_data_converte(filename, calibration):
@@ -58,12 +59,38 @@ def media_movel(df, janela):###
     df_copia = df_copia.rolling(window=int(janela), min_periods=1).mean() #aplicação do filtro de fato atráves do pandas
     return df_copia.round(4)
 
+#2.2 ------ Ajuste de offset ------- 
+
 def adjust_offset(df, n_linhas):
     df_copia = df.copy()
     adjust = df_copia.iloc[:int(n_linhas)].mean()
     df_copia = df_copia - adjust
 
     return df_copia
+
+#2.3 ------ Filtro Passa Baixa ------- 
+
+def filter_low_pass(df, cut_freq, sample_rate, order):
+    df_copia = df.copy()
+    nyquisfreq = 0.5 * sample_rate
+    low_pass_ratio = cut_freq/nyquisfreq
+    b, a = signal.butter(order, low_pass_ratio, btype="low")
+    for col in df_copia.columns:
+        df_copia[col] = signal.filtfilt(b, a, df_copia[col])
+    return df_copia.round(4)
+
+
+
+# ---------- Criação d botões ----------
+
+def callback_botao_passabaixa():
+    valor_digi = dpg.get_value("input_passabaixa")
+    df_filtrado = filter_low_pass(df_sensores, valor_digi, sample_rate=25000, order=2)
+    colunas = df_filtrado.columns
+    for i in range(min(18, len(colunas))):
+        col_name = colunas[i]
+        y_novo = df_filtrado[col_name].tolist()
+        dpg.set_value(f"serie_canal_{i}", [x_data, y_novo])
 
 def callback_botao_filtro():
     # 1. Pega o valor que você digitou na caixinha
@@ -89,7 +116,7 @@ def callback_botao_offset():
     colunas = df_offset.columns
     for i in range(min(18, len(colunas))):
         col_name = colunas[i]
-        y_novo = df_offset[col_name].tolist
+        y_novo = df_offset[col_name].tolist()
         dpg.set_value(f"serie_canal_{i}", [x_data, y_novo])
 
 
@@ -100,8 +127,18 @@ x_data, df_sensores = load_data_converte("LOG_1.txt", 0.00003375)
 #3. --------------- Interface -------------------- #
 dpg.create_context()
 
+#3.1 --------- Cor das janelas --------#
+
+with dpg.theme() as white_color:
+    with dpg.theme_component(dpg.mvWindowAppItem):
+        dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (255, 255, 255, 255))
+
+#3.2 ----- Janelas principais ------#
+
 with dpg.window(tag="Primary Window"):
     dpg.add_text("VISUALIZADOR DE EXTENSOMETRIA", color=(0, 255, 255))
+
+    #3.2.1 ---- Botões -----
 
     with dpg.group(horizontal=True):
         # Onde você digita o valor da média
@@ -122,7 +159,16 @@ with dpg.window(tag="Primary Window"):
         # O Botão que chama a função de offset
         dpg.add_button(label="Aplicar Offset", callback=callback_botao_offset)
 
-    dpg.add_separator() 
+    dpg.add_separator()
+
+    dpg.add_text("Frequecia de corte")
+
+    with dpg.group(horizontal=True):
+        dpg.add_input_int(default_value=10, width=150, tag='input_passabaixa', min_value=1)
+
+        dpg.add_button(label="Frequencia de corte", callback=callback_botao_passabaixa)
+
+    #------ 3.2.2 --- plotagem gráfico ------# 
     
     with dpg.plot(label="Sensores - Tensão (MPa)", height=-1, width=-1):
         dpg.add_plot_legend()
@@ -148,6 +194,8 @@ with dpg.window(tag="Primary Window"):
             
         else:
             dpg.add_text("Erro ao carregar dados.")
+
+#dpg.bind_item_theme("Primary Window", white_color)
 
 dpg.create_viewport(title='Analise Grafica', width=1000, height=600)
 dpg.setup_dearpygui()
