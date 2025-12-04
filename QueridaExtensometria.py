@@ -81,10 +81,10 @@ def filter_low_pass(df, cut_freq, sample_rate, order):
 
 
 
-# ---------- Criação d botões ----------
+# ---------- Criação de botões ----------
 
 def callback_botao_passabaixa():
-    valor_digi = dpg.get_value("input_passabaixa")
+    valor_digi = dpg.get_value("input_passabaixa") #indica o valor que vou colocar no meu input
     df_filtrado = filter_low_pass(df_sensores, valor_digi, sample_rate=25000, order=2)
     colunas = df_filtrado.columns
     for i in range(min(18, len(colunas))):
@@ -93,22 +93,14 @@ def callback_botao_passabaixa():
         dpg.set_value(f"serie_canal_{i}", [x_data, y_novo])
 
 def callback_botao_filtro():
-    # 1. Pega o valor que você digitou na caixinha
-    valor_janela = dpg.get_value("input_janela_mm")
+    valor_janela = dpg.get_value("input_janela_mm") 
     df_filtrado = media_movel(df_sensores, valor_janela)
     colunas = df_filtrado.columns
     for i in range(min(18, len(colunas))):
         col_name = colunas[i]
         y_novo = df_filtrado[col_name].tolist()
         dpg.set_value(f"serie_canal_{i}", [x_data, y_novo])
-    
-    # 2. Aplica a matemática (note que usamos suas variáveis originais)
-    # Guardamos o resultado numa nova variável para não perder o original
-    #df_filtrado = media_movel(df_sensores, valor_janela)
-    
-    # Por enquanto, vamos apenas mostrar no terminal para provar que funcionou
-    print(f"Filtro aplicado com janela {valor_janela}!")
-    print(df_filtrado.head()) 
+
 
 def callback_botao_offset():
     n_linhas = dpg.get_value("input_offset")
@@ -119,26 +111,32 @@ def callback_botao_offset():
         y_novo = df_offset[col_name].tolist()
         dpg.set_value(f"serie_canal_{i}", [x_data, y_novo])
 
+def callback_zomm(sender, app_data):
+    x_min, x_max = app_data[0], app_data[1]
+    y_min, y_max = app_data[2], app_data[3]
+    dpg.set_axis_limits("meu_eixo_x", x_min, x_max)
+    dpg.set_axis_limits("meu_eixo_y", y_min, y_max)
+
 
 x_data, df_sensores = load_data_converte("LOG_1.txt", 0.00003375)
 
 
 
-#3. --------------- Interface -------------------- #
+#4. --------------- Interface -------------------- #
 dpg.create_context()
 
-#3.1 --------- Cor das janelas --------#
+#4.1 --------- Cor das janelas --------#
 
 with dpg.theme() as white_color:
     with dpg.theme_component(dpg.mvWindowAppItem):
         dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (255, 255, 255, 255))
 
-#3.2 ----- Janelas principais ------#
+#4.2 ----- Janelas principais ------#
 
 with dpg.window(tag="Primary Window"):
     dpg.add_text("VISUALIZADOR DE EXTENSOMETRIA", color=(0, 255, 255))
 
-    #3.2.1 ---- Botões -----
+    #4.2.1 ---- Botões -----
 
     with dpg.group(horizontal=True):
         # Onde você digita o valor da média
@@ -170,10 +168,10 @@ with dpg.window(tag="Primary Window"):
 
     #------ 3.2.2 --- plotagem gráfico ------# 
     
-    with dpg.plot(label="Sensores - Tensão (MPa)", height=-1, width=-1):
+    with dpg.plot(label="Sensores - Tensão (MPa)", height=-1, width=-1, query=True, callback=callback_zomm): #no plot usa a fução query para ativar a seleção de mouse, o callback retorna a função
         dpg.add_plot_legend()
-        xaxis = dpg.add_plot_axis(dpg.mvXAxis, label="Tempo (s)")
-        yaxis = dpg.add_plot_axis(dpg.mvYAxis, label="Tensão (MPa)")
+        xaxis = dpg.add_plot_axis(dpg.mvXAxis, label="Tempo (s)", tag="Eixo X")
+        yaxis = dpg.add_plot_axis(dpg.mvYAxis, label="Tensão (MPa)", tag="Eixo Y")
         
         if len(x_data) > 0:
             
