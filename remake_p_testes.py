@@ -3,6 +3,7 @@ import numpy as np
 import dearpygui.dearpygui as dpg
 from scipy import signal
 import os
+import matplotlib.pyplot as plt
 
 # --- VARIÁVEIS GLOBAIS (Inicializadas vazias) ---
 x_data = []
@@ -15,7 +16,7 @@ def load_data_converte(filepath, calibration=0.00003375):
     if filepath.endswith(".txt"):
         try:
             print(f"Lendo: {filepath} ...")
-            # Leitura Robusta
+            # Leitura dos arquivos
             txt_file = pd.read_csv(filepath, sep=r'[;\s]+', header=None, engine="python", on_bad_lines='skip') 
 
             # Limpeza de Tempo
@@ -171,6 +172,40 @@ def ao_escolher_arquivo(sender, app_data):
         # Ajusta o zoom para os novos dados
         dpg.fit_axis_data("eixo_x")
         dpg.fit_axis_data("eixo_y")
+
+# --- NOVO: FUNÇÃO DE EXPORTAÇÃO PARA PNG (MATPLOTLIB) ---
+def exportar_grafico(sender, app_data, user_data):
+    if df_visualizacao.empty or len(x_data) == 0:
+        print("Nada para exportar!")
+        return
+
+    print("Gerando imagem... (Pode levar alguns segundos)")
+    
+    # 1. Cria uma figura invisível do Matplotlib
+    plt.figure(figsize=(12, 6), dpi=150) # Tamanho e Resolução
+    
+    # 2. Plota os mesmos canais que estão marcados no Dear PyGui
+    for col_name in colunas_disponiveis:
+        tag_chk = checkbox_tags.get(col_name)
+        if tag_chk and dpg.get_value(tag_chk):
+            if col_name in df_visualizacao.columns:
+                # Plota a linha
+                plt.plot(x_data, df_visualizacao[col_name], label=f"Canal {col_name}", linewidth=1)
+
+    # 3. Configura o visual "Relatório" (Fundo Branco)
+    plt.title("Relatório de Extensometria")
+    plt.xlabel("Tempo (s)")
+    plt.ylabel("Tensão (MPa)")
+    plt.grid(True, linestyle='--', alpha=0.7) # Grade pontilhada
+    plt.legend() # Legenda automática
+    plt.tight_layout()
+
+    # 4. Salva o arquivo
+    nome_arquivo = "Grafico_Exportado.png"
+    plt.savefig(nome_arquivo)
+    plt.close() # Limpa a memória
+    
+    print(f"GRÁFICO SALVO COM SUCESSO: {nome_arquivo}")
 
 
 # 5. ---------------- Interface Gráfica ------------------ #

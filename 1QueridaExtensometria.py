@@ -215,13 +215,24 @@ def select_archive(sender, app_data):
 #4. --------------- Interface -------------------- #
 dpg.create_context()
 
-#4.1 --------- Cor das janelas --------#
+#4.1 --------- Cor das janelas (alteração) --------#
 
-with dpg.theme() as white_color:
-    with dpg.theme_component(dpg.mvWindowAppItem):
+with dpg.theme() as tema_claro:
+    #o mvall passa o fundo branco para todo mundo
+    with dpg.theme_component(dpg.mvAll):
         dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (255, 255, 255, 255))
+        dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (255, 255, 255, 255))
+        dpg.add_theme_color(dpg.mvThemeCol_PopupBg, (240, 240, 240, 240))
+        dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0))
+        dpg.add_theme_color(dpg.mvThemeCol_Button, (240, 240, 240))
+        dpg.add_theme_color(dpg.mvThemeCol_FrameBg, (240, 240, 240))
+        dpg.add_theme_color(dpg.mvThemeCol_Border, (240, 240, 240))
 
-# Cria o seletor de arquivos 
+#------------------------------------------------
+
+
+
+#4.1.1 Cria o seletor de arquivos 
 with dpg.file_dialog(directory_selector=False, show=False, callback=select_archive, tag="file_dialog_id", width=700, height=400):
     dpg.add_file_extension(".txt", color=(0, 255, 0, 255))
     dpg.add_file_extension(".*")
@@ -229,24 +240,24 @@ with dpg.file_dialog(directory_selector=False, show=False, callback=select_archi
 #4.2 ----- Janelas principais ------#
 
 with dpg.window(tag="Primary Window"):
-    dpg.add_text("VISUALIZADOR DE EXTENSOMETRIA", color=(0, 255, 255))
+    dpg.add_text("VISUALIZADOR DE EXTENSOMETRIA", color=(0, 0, 0))
     dpg.add_spacer(width=50)
     dpg.add_button(label="Selecionar aquivo: ", callback=lambda: dpg.show_item("file_dialog_id"))
 
     #4.2.1 ---- Botões -----
 
-    with dpg.group(horizontal=True):
+    with dpg.group(horizontal=False):
         # Onde você digita o valor da média
         dpg.add_input_int(default_value=10, width=150, tag="input_janela_mm")
         # O botão que chama a função que criamos acima
-        dpg.add_button(label="Aplicar Média Móvel", callback=processar_e_plotar)
+        dpg.add_button(label="Aplicar Média Móvel", callback=processar_e_plotar, )
 
 
     dpg.add_separator()
 
     dpg.add_text("Controle de Offset (Zerar):")
     
-    with dpg.group(horizontal=True):
+    with dpg.group(horizontal=False):
         dpg.add_input_int(default_value=10, width=150, tag="input_offset", min_value=1)
         dpg.add_button(label="Aplicar Offset", callback=processar_e_plotar)
 
@@ -254,14 +265,14 @@ with dpg.window(tag="Primary Window"):
 
     dpg.add_text("Frequecia de corte passa baixa")
 
-    with dpg.group(horizontal=True):
+    with dpg.group(horizontal=False):
         dpg.add_input_float(default_value=10, width=150, tag='input_passabaixa', min_value=0.01)
         dpg.add_button(label="Frequencia de corte passa baixa", callback=processar_e_plotar)
 
     dpg.add_separator()
 
 
-    with dpg.group(horizontal=True):
+    with dpg.group(horizontal=False):
         dpg.add_input_float(default_value=10, width=150, tag="input_highpass", min_value=0.01)
         dpg.add_button(label="Frequencia corte passa alta", callback=processar_e_plotar)
 
@@ -306,7 +317,8 @@ with dpg.window(tag="Primary Window"):
             yaxis = dpg.add_plot_axis(dpg.mvYAxis, label="Tensão (MPa)", tag="eixo_y")
 
 
-#dpg.bind_item_theme("Primary Window", white_color)
+dpg.bind_item_theme("Primary Window", tema_claro)
+
 
 #----- Exibição ---------#
 
