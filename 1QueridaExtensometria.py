@@ -10,45 +10,45 @@ checkbox_tags = {}
 colunas_disponiveis = []
 
 #1 ---------------- Carregar dados do arquivo ------------------ #
+
+"""Abre arquivo de medição para análise experimental de tensões
+
+        O método abre o arquivo de medição podendo esse no formato
+        .txt. É criado o Dataframe da medição e o
+        vetor contendo os registros temporais de todas as entradas."""
+
 def load_data_converte(filename, calibration):
 
     passo = 1
     if filename.endswith(".txt"):
 
         try:
-            #1.1 ------ Importando o meu arquivo txt com leitura extensometrica --------
 
             txt_file = pd.read_csv(filename, sep=r'[;\s]+', header=None, engine="python", on_bad_lines="skip") 
 
-            #1.2 ---- Transformando possiveis linhas problematicas em linhas funcionais -----
-
-            # Vamos garantir que as primeiras 6 colunas (tempo) sejam NÚMEROS
             cols_tempo_indices = [0, 1, 2, 3, 4, 5]
             for col in cols_tempo_indices:
                 txt_file[col] = pd.to_numeric(txt_file[col], errors='coerce')
             
-            #1.3 --- Descartando linhas que ficaram em NaN
-        
             txt_file = txt_file.dropna(subset=cols_tempo_indices)
-            # Converte para inteiro (porque dia 10.0 fica feio, queremos dia 10)
             txt_file[cols_tempo_indices] = txt_file[cols_tempo_indices].astype(int)
                 
-        
-            #1.4 ------ Criando timestamp das horas --------
-            time_cols = txt_file.iloc[:, 0:6] #Colocando o timestamp e as colunas de tempo
+            #1.2 ------ Criando timestamp das horas -------- #Organizar melhor aqui depois
+            time_cols = txt_file.iloc[:, 0:6] 
             time_cols.columns = ["day", "month", "year", "hour", "minute", "second"]
             timestamp = pd.to_datetime(time_cols)
             df_temp = pd.DataFrame({'timestamp': timestamp})
             df_data = pd.concat([df_temp, txt_file.iloc[:, 7:]], axis=1)
             df_sorted = df_data.sort_values(by='timestamp').reset_index(drop=True)
             start_time = df_sorted['timestamp'].iloc[0]
-            eixo_x_segundos = (df_sorted['timestamp'] - start_time).dt.total_seconds().tolist()
-            sensores_df = df_sorted.iloc[:, 1:].fillna(0) * calibration
-            #Cria uma interpolação caso tenham buracos no gráfico
+            eixo_x_segundos = ((df_sorted['timestamp'] - start_time).dt.total_seconds()).tolist() #Onde se altera a dimensão do eixo tempo
+            sensores_df = df_sorted.iloc[:, 1:].fillna(0) * calibration 
             sensores_df = sensores_df.interpolate(method='linear', limit_direction='both').fillna(0)
-
-            # Renomeia colunas para ficar bonito (Canal 1, Canal 2...) se forem números puros
             sensores_df.columns = [str(c) for c in sensores_df.columns]
+            #alterando nomes dos sensores
+            amount_data = len(sensores_df.columns)
+            new_name = [str(i + 1) for i in range(amount_data)]
+            sensores_df.columns = new_name
 
             print(f"Sucesso! {len(eixo_x_segundos)} pontos, {len(sensores_df.columns)} canais.")
             return eixo_x_segundos, sensores_df
@@ -56,23 +56,26 @@ def load_data_converte(filename, calibration):
         except Exception as e:
             print(f"Erro ao carregar: {e}")
             return [], pd.DataFrame()
-        
-
-    
+            
     return [], pd.DataFrame()
-
 
 
 #2. ---------------- Filtros e ajustes -------------
 
-#2.1 ------ Média movel ------- 
+    """Este trecho contem todas as funções de filtros e ajustes que podem ser aplicados
+    Média move: Suaviza os dados aplicando uma média móvel com janela definida pelo usuário.
+    Ajuste de offset: Remove o offset inicial dos dados com base na média dos primeiros n pontos.
+    Filtro passa baixa: Aplica um filtro Butterworth passa baixa para remover ruídos de alta frequência.
+    Filtro passa alta: Aplica um filtro Butterworth passa alta para remover tendências de baixa frequência.
+    Identificação de outliers: Detecta pontos fora do padrão usando z-score baseado em média móvel.
+    Remoção de outliers: Substitui os outliers identificados por interpolação linear.
+    """
 
-def media_movel(df, janela):###
-    df_copia = df.copy() #criando uma copia do meu dataframe pra não quebrar ele
-    df_copia = df_copia.rolling(window=int(janela), min_periods=1).mean() #aplicação do filtro de fato atráves do pandas
+def media_movel(df, janela):
+    df_copia = df.copy() 
+    df_copia = df_copia.rolling(window=int(janela), min_periods=1).mean() 
+
     return df_copia.round(4)
-
-#2.2 ------ Ajuste de offset ------- 
 
 def adjust_offset(df, n_linhas):
     df_copia = df.copy()
@@ -81,31 +84,61 @@ def adjust_offset(df, n_linhas):
 
     return df_copia
 
-#2.3 ------ Filtro Passa Baixa ------- 
 
 def filter_low_pass(df, cut_freq, sample_rate, order):
     df_copia = df.copy()
     nyquisfreq = 0.5 * sample_rate
     low_pass_ratio = cut_freq/nyquisfreq
-    b, a = signal.butter(order, low_pass_ratio, btype="low")
+    b, a = signal.butter(order, low_pass_ratio, btype="lowpass")
     for col in df_copia.columns:
         df_copia[col] = signal.filtfilt(b, a, df_copia[col])
+
     return df_copia.round(4)
 
-#2.4 ------- Filtro Passa Alta ------- #
 
 def filter_high_pass(df, freq_corte, freq_rate, order):
     df_copia = df.copy()
     nyquisfreq = 0.5 * freq_rate
     filter_high_pass = freq_corte/nyquisfreq
-    b, a = signal.butter(order, filter_high_pass, btype="high")
+    b, a = signal.butter(order, filter_high_pass, btype="highpass")
     for col in df_copia.columns:
         df_copia[col] = signal.filtfilt(b, a, df_copia[col])
+
+    return df_copia.round(4)
+
+
+def indentify_outliers(df, window, thresh=3, verbose=False):
+    df_copia = df.copy()
+    outlier_mask = pd.DataFrame(False, index=df_copia.index, columns=df_copia.columns)
+    for col in df_copia.columns:
+        series = df_copia[col]
+        rolling_mean = series.rolling(window=window, min_periods=1).mean()
+        rolling_std = series.rolling(window=window, min_periods=1).std()
+        z_scores = (series - rolling_mean) / rolling_std
+        outliers = np.abs(z_scores) > thresh
+        outlier_mask[col] = outliers
+        if verbose:
+                print(f"[INFO] Coluna: {col}")
+                print(f"       Média: {series.mean():.2f}, Desvio padrão: {series.std():.2f}")
+                print(f"       Outliers detectados: {outliers.sum()} de {len(series)}\n")
+
+    return outlier_mask
+    
+#2.6 ----- Remover outliers ---- #
+def remove_outliers(df, window, thresh=3, verbose=False):
+    df_copia = df.copy()
+    outlier_mask = indentify_outliers(df_copia, window, thresh, verbose)
+    df_copia = df_copia.mask(outlier_mask)
+    df_copia = df_copia.interpolate(method='linear', limit_direction='both').fillna(0)
+
     return df_copia.round(4)
 
 
 
 # 3. ---------- Criação de botões ---------- #
+""""São chamadas as funções de processamento e plotagem dos dados
+e são aplicadas a ponteiros na interface gráfica, para em seguida 
+atualizar o gráfico conforme os filtros são aplicados."""
 
 # 3.1 --------- calculando taxa de plotagem ----- #
 
@@ -117,15 +150,12 @@ def processar_e_plotar(sender, app_data, user_data):
     df_trabalho = df_sensores.copy()
     
     if len(x_data) > 1:
-        # Pega o tempo total (Fim - Início)
         tempo_total = x_data[-1] - x_data[0]
 
-        # calcula a média
         if tempo_total > 0:
-            # Taxa = Quantos pontos existem / Quanto tempo durou
             taxa_real = len(x_data) / tempo_total
         else:
-            taxa_real = 1.0 # Evita divisão por zero se o arquivo tiver tempo zerado
+            taxa_real = 1.0 
     else:
         taxa_real = 1.0
 
@@ -133,25 +163,25 @@ def processar_e_plotar(sender, app_data, user_data):
 
     # --- 3.2 Adicionando filtros um após o outro ---
     
-    # Passo A: Offset
     n_offset = dpg.get_value("input_offset")
     if n_offset > 0:
         df_trabalho = adjust_offset(df_trabalho, n_offset)
 
-    # Passo B: Média Móvel
     janela = dpg.get_value("input_janela_mm")
     if janela > 1:
         df_trabalho = media_movel(df_trabalho, janela)
 
-    # Passo C: Passa Baixa
     corte_low = dpg.get_value("input_passabaixa")
     if corte_low > 0 and corte_low < (taxa_real / 2):
-        df_trabalho = filter_low_pass(df_trabalho, corte_low, taxa_real, order=2)
+        df_trabalho = filter_low_pass(df_trabalho, corte_low, sample_rate=taxa_real, order=2)   
 
-    # Passo D: Passa Alta
     corte_high = dpg.get_value("input_highpass")
     if corte_high > 0 and corte_high < (taxa_real / 2):
         df_trabalho = filter_high_pass(df_trabalho, corte_high, freq_rate=taxa_real, order=2)
+
+    remove_out = dpg.get_value("input_outliers")
+    if remove_out > 0:
+        df_trabalho = remove_outliers(df_trabalho, window=remove_out, thresh=3, verbose=False)
 
     # 3.3 ------ PLOTAGEM ---------
     dpg.delete_item("eixo_y", children_only=True)
@@ -162,14 +192,9 @@ def processar_e_plotar(sender, app_data, user_data):
         if tag_check and dpg.get_value(tag_check):
             if col_name in df_trabalho.columns:
                 value_y = df_trabalho[col_name].tolist()
-                dpg.add_line_series(x_data, value_y, parent="eixo_y", label=f"Canal {col_name}")
+                dpg.add_line_series(x_data, value_y, parent="eixo_y", label=f"Sensor {col_name}")
     
-    
-    '''for i in range(min(18, len(colunas))):
-        col_name = colunas[i]
-        y_vals = df_trabalho[col_name].tolist()
-        dpg.add_line_series(x_data, y_vals, parent="Eixo Y", label=f"Canal {col_name}")'''
-    #plotagem das colunas sem checkbox (apagar dps)
+
 
     # 3.4 ------- Criando o zoom ------ #
 def callback_zomm(sender, app_data):
@@ -202,7 +227,7 @@ def select_archive(sender, app_data):
             # Marca os 3 primeiros por padrão
             estado = True if col in colunas_disponiveis[:3] else False
             # Adiciona ao grupo que limpamos acima
-            dpg.add_checkbox(label=f"Canal {col}", tag=tag_chk, default_value=estado, callback=processar_e_plotar, parent="grupo_lista_canais")
+            dpg.add_checkbox(label=f"Sensor {col}", tag=tag_chk, default_value=estado, callback=processar_e_plotar, parent="grupo_lista_canais")
         
         # 3. Plota
         processar_e_plotar(None, None, None)
@@ -246,37 +271,45 @@ with dpg.window(tag="Primary Window"):
 
     #4.2.1 ---- Botões -----
 
-    with dpg.group(horizontal=False):
-        # Onde você digita o valor da média
-        dpg.add_input_int(default_value=10, width=150, tag="input_janela_mm")
-        # O botão que chama a função que criamos acima
-        dpg.add_button(label="Aplicar Média Móvel", callback=processar_e_plotar, )
+    with dpg.group(horizontal=True):
+
+        with dpg.group(horizontal=True):
+            # Onde você digita o valor da média
+            dpg.add_input_int(default_value=0, width=90, tag="input_janela_mm")
+            # O botão que chama a função que criamos acima
+            dpg.add_button(label="Aplicar Média Móvel", callback=processar_e_plotar, )
 
 
-    dpg.add_separator()
+        dpg.add_spacer(width=20)
 
-    dpg.add_text("Controle de Offset (Zerar):")
-    
-    with dpg.group(horizontal=False):
-        dpg.add_input_int(default_value=10, width=150, tag="input_offset", min_value=1)
-        dpg.add_button(label="Aplicar Offset", callback=processar_e_plotar)
+        #dpg.add_text("Controle de Offset (Zerar):")
+        
+        with dpg.group(horizontal=True):
+            dpg.add_input_int(default_value=0, width=90, tag="input_offset", min_value=0)
+            dpg.add_button(label="Aplicar Offset", callback=processar_e_plotar)
 
-    dpg.add_separator()
+        dpg.add_spacer(width=20)
 
-    dpg.add_text("Frequecia de corte passa baixa")
+        #dpg.add_text("Frequecia de corte passa baixa")
 
-    with dpg.group(horizontal=False):
-        dpg.add_input_float(default_value=10, width=150, tag='input_passabaixa', min_value=0.01)
-        dpg.add_button(label="Frequencia de corte passa baixa", callback=processar_e_plotar)
+        with dpg.group(horizontal=True):
+            dpg.add_input_float(default_value=0.00, width=90, tag='input_passabaixa', min_value=0.00)
+            #dpg.add_input_int(default_value=0, width=90, tag="input_order", min_value=1, label="Ordem")
+            dpg.add_button(label="Aplicar passa baixa", callback=processar_e_plotar)
+            #dpg.add_button(label="Adicionar Ordem", callback=processar_e_plotar)
 
-    dpg.add_separator()
+        dpg.add_spacer(width=20)
 
 
-    with dpg.group(horizontal=False):
-        dpg.add_input_float(default_value=10, width=150, tag="input_highpass", min_value=0.01)
-        dpg.add_button(label="Frequencia corte passa alta", callback=processar_e_plotar)
+        with dpg.group(horizontal=True):
+            dpg.add_input_float(default_value=0.00, width=90, tag="input_highpass", min_value=0.00)
+            dpg.add_button(label="Aplicar passa alta", callback=processar_e_plotar)
 
-    dpg.add_separator()
+        with dpg.group(horizontal=True):
+            dpg.add_input_int(default_value=0, width=90, tag="input_outliers", min_value=0)
+            dpg.add_button(label="Remover Outliers", callback=processar_e_plotar)
+
+        #dpg.add_separator()
 
 # 4.3 --- plotagem gráfico ------# 
     
