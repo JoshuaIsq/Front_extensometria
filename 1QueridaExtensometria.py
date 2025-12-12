@@ -9,6 +9,7 @@ df_sensores = pd.DataFrame()
 checkbox_tags = {} 
 colunas_disponiveis = []
 
+
 #1 ---------------- Carregar dados do arquivo ------------------ #
 
 """Abre arquivo de medição para análise experimental de tensões
