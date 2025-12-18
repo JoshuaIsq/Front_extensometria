@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import scipy as sp
 from scipy import signal
+import dearpygui.dearpygui as dpg
+import random
 
 """Abre arquivo de medição para análise experimental de tensões
     Contém funções para carregar dados de arquivos .txt (necessário incluir outros futuramente),
@@ -13,17 +15,50 @@ class DataStorage:
     df_sensores = pd.DataFrame()
     checkbox_tags = {} 
     colunas_disponiveis = []
+    arquivos_acumulados = []
+    df_visualizacao_atual = pd.DataFrame()
 
 
+def load_data_converte(filenames, calibration):
 
-def load_data_converte(filename, calibration):
+    #Importação de mais de um arquivo ao mesmo tempo
 
-    passo = 1
-    if filename.endswith(".txt"):
+    import os
+    if isinstance(filenames, str):
+        filenames = [filenames]
+        
+    
+    if filenames:
+        for f in filenames:
+            if f not in DataStorage.arquivos_acumulados:
+                DataStorage.arquivos_acumulados.append(f)
+    
+    arquivos_para_processar = DataStorage.arquivos_acumulados
+    lista_dfs_processados = []
+    qtd_colunas_padrao = None 
+
+    print(f"--- INICIANDO LEITURA DE {len(arquivos_para_processar)} ARQUIVOS ---")
+
+    for arquivo in arquivos_para_processar:
+        if not arquivo.endswith(".txt"):
+            continue
+            
         try:
+            # Leitura de arquivo por arquivo
+            txt_file = pd.read_csv(arquivo, sep=r'[;\s]+', header=None, engine="python", on_bad_lines="skip")
+            
+            # --- DEBUG VISUAL --#
+            print(f"Lendo '{os.path.basename(arquivo)}': Encontradas {txt_file.shape[1]} colunas.")
 
-            txt_file = pd.read_csv(filename, sep=r'[;\s]+', header=None, engine="python", on_bad_lines="skip") 
+            # Verificar se todos os arquivos são do mesmo tipo e são validos
+            num_cols_atual = txt_file.shape[1] #Amei isso aqui
+            if qtd_colunas_padrao is None:
+                qtd_colunas_padrao = num_cols_atual
+            elif num_cols_atual != qtd_colunas_padrao:
+                print(f"[ERRO] Arquivo '{os.path.basename(arquivo)}' ignorado.")
+                print(f"       Motivo: Tem {num_cols_atual} colunas, mas o padrão é {qtd_colunas_padrao}.")
 
+            # Processamento do dataframe
             cols_tempo_indices = [0, 1, 2, 3, 4, 5]
             for col in cols_tempo_indices:
                 txt_file[col] = pd.to_numeric(txt_file[col], errors='coerce')
@@ -31,31 +66,53 @@ def load_data_converte(filename, calibration):
             txt_file = txt_file.dropna(subset=cols_tempo_indices)
             txt_file[cols_tempo_indices] = txt_file[cols_tempo_indices].astype(int)
                 
-            #Fazer uma limpeza organizacional deste trecho futuramente
             time_cols = txt_file.iloc[:, 0:6] 
             time_cols.columns = ["day", "month", "year", "hour", "minute", "second"]
             timestamp = pd.to_datetime(time_cols)
+            
             df_temp = pd.DataFrame({'timestamp': timestamp})
-            df_data = pd.concat([df_temp, txt_file.iloc[:, 7:]], axis=1)
-            df_sorted = df_data.sort_values(by='timestamp').reset_index(drop=True)
-            start_time = df_sorted['timestamp'].iloc[0]
-            #Função que altera o eixo tempo (pode ser segundos, minutos, horas, dias, sujeito a manipulação)
-            eixo_x_segundos = ((df_sorted['timestamp'] - start_time).dt.total_seconds()).tolist() 
-            sensores_df = df_sorted.iloc[:, 1:].fillna(0) * calibration 
-            sensores_df = sensores_df.interpolate(method='linear', limit_direction='both').fillna(0)
-            sensores_df.columns = [str(c) for c in sensores_df.columns]
-            amount_data = len(sensores_df.columns)
-            new_name = [str(i + 1) for i in range(amount_data)]
-            sensores_df.columns = new_name
+            df_temp = pd.concat([df_temp, txt_file.iloc[:, 6:]], axis=1)
+            
+            lista_dfs_processados.append(df_temp)
 
-            print(f"Sucesso! {len(eixo_x_segundos)} pontos, {len(sensores_df.columns)} canais.")
-            return eixo_x_segundos, sensores_df
-            
         except Exception as e:
-            print(f"Erro ao carregar: {e}")
-            return [], pd.DataFrame()
+            print(f"Erro ao ler arquivo {arquivo}: {e}")
+
+    if not lista_dfs_processados:
+        print("Nenhum dado válido na memória.")
+        return [], pd.DataFrame()
+
+    # 3. Concatenação e Processamento Final
+    try:
+        df_full = pd.concat(lista_dfs_processados, ignore_index=True)
+        df_sorted = df_full.sort_values(by='timestamp').reset_index(drop=True)
+        eixo_x_segundos = (df_sorted['timestamp'].astype('int64') / 10**9).tolist()
+        dados_brutos = df_sorted.iloc[:, 1:].copy()
+        
+        for col in dados_brutos.columns:
+            dados_brutos[col] = pd.to_numeric(dados_brutos[col], errors='coerce')
+        
+        dados_numericos = dados_brutos.fillna(0.0)
+
+        try:
+            val_calibracao = float(calibration)
+        except:
+            val_calibracao = 1.0
             
-    return [], pd.DataFrame()
+        sensores_df = dados_numericos * val_calibracao
+        
+        amount_data = len(sensores_df.columns)
+        new_name = [str(i + 1) for i in range(amount_data)]
+        sensores_df.columns = new_name
+
+        print(f"Sucesso! {len(eixo_x_segundos)} pontos carregados.")
+        return eixo_x_segundos, sensores_df
+
+    except Exception as e:
+        print(f"Erro CRÍTICO na matemática final: {e}")
+        import traceback
+        traceback.print_exc() # Mostra onde foi o erro exato
+        return [], pd.DataFrame()
 
 
 #2. ---------------- Filtros e ajustes -------------
@@ -129,3 +186,45 @@ def remove_outliers(df, window, thresh=3, verbose=False):
     df_copia = df_copia.interpolate(method='linear', limit_direction='both').fillna(0)
 
     return df_copia.round(4)
+
+#-------3. Calculo da tendência global ---------
+
+def tendency(df, window_size=None): 
+    """
+    Calcula a TENDÊNCIA GLOBAL (Regressão Linear Simples).
+    Gera uma reta única que mostra a direção geral (drift) dos dados.
+    """
+    df_copia = df.copy()
+    tendencia_df = pd.DataFrame()
+    
+    print("Calculando Regressão Linear")
+    
+    x_axis = np.arange(len(df_copia))
+    
+    for col in df_copia.columns:
+        y_axis = df_copia[col].values
+        
+        try:
+            #calcula a regressão linear
+            coeficientes = np.polyfit(x_axis, y_axis, 1)
+            
+            # Cria a função da reta: f(x) = ax + b
+            funcao_reta = np.poly1d(coeficientes)
+            
+            # Gera os pontos da reta para plotar
+            tendencia_df[col] = funcao_reta(x_axis)
+            
+        except Exception as e:
+            print(f"Erro na regressão global de {col}: {e}")
+            tendencia_df[col] = y_axis 
+
+    return tendencia_df.round(4)
+
+
+def actual_tendency(janela_pontos=None):
+    if DataStorage.df_visualizacao_atual.empty:
+        print("[Erro] Nenhum dado disponível.")
+        return None
+    
+    # Não precisamos mais passar janela para essa lógica global
+    return tendency(DataStorage.df_visualizacao_atual)

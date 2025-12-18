@@ -42,7 +42,21 @@ def load_data_converte(filename, calibration):
             df_data = pd.concat([df_temp, txt_file.iloc[:, 7:]], axis=1)
             df_sorted = df_data.sort_values(by='timestamp').reset_index(drop=True)
             start_time = df_sorted['timestamp'].iloc[0]
-            eixo_x_segundos = ((df_sorted['timestamp'] - start_time).dt.total_seconds()).tolist() #Onde se altera a dimensão do eixo tempo
+            #QUALQUER COISA APAGUE ESSE DEF
+            def select_axes(type):
+                if type == 'seconds':
+                    eixo_x_segundos = ((df_sorted['timestamp'] - start_time).dt.total_seconds()).tolist()
+                    return eixo_x_segundos
+                elif type == 'hours':
+                    eixo_x_segundos = ((df_sorted['timestamp'] - start_time).dt.total_seconds/3600()).tolist()
+                    return eixo_x_segundos
+                elif type == 'days':
+                    eixo_x_segundos = ((df_sorted['timestamp'] - start_time).dt.total_seconds/86400()).tolist()
+                    return eixo_x_segundos
+                else:
+                    eixo_x_segundos = ((df_sorted['timestamp'] - start_time).dt.total_seconds()).tolist()
+                    return  eixo_x_segundos
+            eixo_x = select_axes(type)
             sensores_df = df_sorted.iloc[:, 1:].fillna(0) * calibration 
             sensores_df = sensores_df.interpolate(method='linear', limit_direction='both').fillna(0)
             sensores_df.columns = [str(c) for c in sensores_df.columns]
@@ -51,8 +65,8 @@ def load_data_converte(filename, calibration):
             new_name = [str(i + 1) for i in range(amount_data)]
             sensores_df.columns = new_name
 
-            print(f"Sucesso! {len(eixo_x_segundos)} pontos, {len(sensores_df.columns)} canais.")
-            return eixo_x_segundos, sensores_df
+            print(f"Sucesso! {len(eixo_x)} pontos, {len(sensores_df.columns)} canais.")
+            return eixo_x, sensores_df
             
         except Exception as e:
             print(f"Erro ao carregar: {e}")
@@ -183,7 +197,9 @@ def processar_e_plotar(sender, app_data, user_data):
     remove_out = dpg.get_value("input_outliers")
     if remove_out > 0:
         df_trabalho = remove_outliers(df_trabalho, window=remove_out, thresh=3, verbose=False)
-
+    
+    option_date = load_data_converte.select_axes(type)
+    select = dpg.add_combo(items=option_date, label="Selecione medida de tempo", default_value=option_date[0], label="Tipo de eixo X")
     # 3.3 ------ PLOTAGEM ---------
     dpg.delete_item("eixo_y", children_only=True)
 

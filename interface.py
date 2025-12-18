@@ -1,6 +1,9 @@
-from chamadas import processar_e_plotar, callback_zomm, select_archive
+from chamadas import processar_e_plotar, callback_zomm, select_archive, open_tendency
 from Import_And_Math import DataStorage
+from Import_And_Math import actual_tendency
 import dearpygui.dearpygui as dpg
+
+
 
 """Interface gráfica para visualização e análise de dados de extensometria.
     Utiliza Dear PyGui para criar a interface do usuário, permitindo a seleção de arquivos,
@@ -8,35 +11,36 @@ import dearpygui.dearpygui as dpg
 
 dpg.create_context()
 
+with dpg.font_registry():
+    default_font = dpg.add_font("C:\\Windows\\Fonts\\Times.ttf", 20)
+
+dpg.bind_font(default_font)
+
 #4.1 --------- Cor das janelas  --------#
 
 with dpg.theme() as tema_claro:
     with dpg.theme_component(dpg.mvAll):
         dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (255, 255, 255, 255))
         dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (255, 255, 255, 255))
-        dpg.add_theme_color(dpg.mvThemeCol_PopupBg, (240, 240, 240, 240))
+        dpg.add_theme_color(dpg.mvThemeCol_PopupBg, (255, 255, 255, 255))
         dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0))
         dpg.add_theme_color(dpg.mvThemeCol_Button, (240, 240, 240))
-        dpg.add_theme_color(dpg.mvThemeCol_FrameBg, (240, 240, 240))
-        dpg.add_theme_color(dpg.mvThemeCol_Border, (240, 240, 240))
+        dpg.add_theme_color(dpg.mvThemeCol_FrameBg, (255, 255, 255))
+        dpg.add_theme_color(dpg.mvThemeCol_Border, (255, 255, 255))
 
-#------------------------------------------------
-
-
-
-#Seletor de arquivos
+#---------- Seletor de arquivos ------------
 with dpg.file_dialog(directory_selector=False, show=False, callback=select_archive, tag="file_dialog_id", width=700, height=400):
     dpg.add_file_extension(".txt", color=(0, 255, 0, 255))
     dpg.add_file_extension(".*")
 
-# ----- Janelas principais ------#
+# ----- Janela principal e botões ------#
 
 with dpg.window(tag="Primary Window"):
-    dpg.add_text("VISUALIZADOR DE EXTENSOMETRIA", color=(0, 0, 0))
+    dpg.add_text("VISUALIZADOR DE EXTENSOMETRIA", color=(0, 0, 0),)
     dpg.add_spacer(width=50)
     dpg.add_button(label="Selecionar aquivo: ", callback=lambda: dpg.show_item("file_dialog_id"))
 
-    #4.2.1 ---- Botões -----
+    # ---- Botões -----
 
     with dpg.group(horizontal=True):
 
@@ -83,13 +87,13 @@ with dpg.window(tag="Primary Window"):
                 dpg.add_input_int(default_value=0, width=90, tag="input_outliers", min_value=0)
                 dpg.add_spacer(height=20)
                 dpg.add_button(label="Remover Outliers", callback=processar_e_plotar)
+        
+        with dpg.group(horizontal=True):
+            dpg.add_button(label="Ver tendencia", callback=open_tendency)
 
-
-        #dpg.add_separator()
-
-# 4.3 --- plotagem gráfico ------# 
+#  --- plotagem gráfico ------# 
     
-#----- 4.3.1  Cria a "Prateleira" (Grupo Horizontal)
+#-----  Cria a "Prateleira" (Grupo Horizontal)
     with dpg.group(horizontal=True):
         
         # ---- 4.3.2 Cria a Caixa da Esquerda (Lista de Canais)
@@ -119,11 +123,11 @@ with dpg.window(tag="Primary Window"):
                     dpg.add_checkbox(label=f"Canal {col}", tag=tag_chk, default_value=comeca_marcado, callback=processar_e_plotar)
 
         # 4.3.3 Cria a Caixa da Direita (O Gráfico)
-        with dpg.plot(label="Analise", height=-1, width=-1, query=True, callback=callback_zomm):
+        with dpg.plot(label="Extensômetros superiores", height=-1, width=-1, query=True, callback=callback_zomm):
             dpg.add_plot_legend()
             
-            xaxis = dpg.add_plot_axis(dpg.mvXAxis, label="Tempo (s)", tag="eixo_x")
-            yaxis = dpg.add_plot_axis(dpg.mvYAxis, label="Tensão (MPa)", tag="eixo_y")
+            xaxis = dpg.add_plot_axis(dpg.mvXAxis, label="Data / Hora", tag="eixo_x", time=True)
+            yaxis = dpg.add_plot_axis(dpg.mvYAxis, label="Deslocamento (mm)", tag="eixo_y")
 
 
 dpg.bind_item_theme("Primary Window", tema_claro)
